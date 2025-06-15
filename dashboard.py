@@ -13,10 +13,10 @@ def get_encouragement(heart_rate, step_count, calories, systolic, diastolic, oxy
             base_url="https://api.moonshot.cn/v1",
         )
 
-        # 构造用户消息，替换占位符
+        # construct user message
         user_message = f"Heart rate {heart_rate}, steps {step_count}, calories {calories}, BP {systolic}/{diastolic}, SpO2 {oxygen}, sleep {sleep_duration}."
 
-        # 创建聊天完成请求
+        # construct API request
         completion = client.chat.completions.create(
             model="moonshot-v1-8k",
             messages=[
@@ -32,7 +32,7 @@ def get_encouragement(heart_rate, step_count, calories, systolic, diastolic, oxy
             temperature=0.3,
         )
 
-        # 打印完整返回内容，验证是否包含鼓励信息
+        # print API response for debug
         print("API 返回内容:", completion)
 
         return completion.choices[0].message.content
@@ -167,7 +167,7 @@ class HealthDashboard:
         self.bo_progress.pack(side="right", padx=20)
 
     def create_encouragement_section(self):
-        # 缩小字体大小
+        # scale the font size to fit the window width
         self.encouragement_label = tk.Label(self.root, text="", font=("Arial", 10, "bold"), bg="#f0f0f0", fg="#27ae60", wraplength=760)
         self.encouragement_label.pack(pady=10)
 
@@ -206,7 +206,7 @@ class HealthDashboard:
 
         if topic == self.topics["heart_rate"]:
             try:
-                # 安全转换为整数
+                # transform the payload to float and then to int
                 heart_rate = int(float(payload))
                 self.update_heart_rate(heart_rate)
             except ValueError:
@@ -252,37 +252,38 @@ class HealthDashboard:
 
     def update_step_count(self, step_count):
         self.step_value.config(text=f"{step_count} steps")
-        self.step_progress["value"] = min(step_count / 10000 * 100, 100)  # 假设10000步为最大值
+        self.step_progress["value"] = min(step_count / 10000 * 100, 100)  # assume 10000 steps as maximum
         self.show_encouragement()
 
     def update_calories(self, calories):
         self.calories_value.config(text=f"{calories} kcal")
-        self.calories_progress["value"] = min(calories / 3000 * 100, 100)  # 假设3000卡路里为最大值
+        self.calories_progress["value"] = min(calories / 3000 * 100, 100)  # assume 3000 calories as maximum
         self.show_encouragement()
 
     def update_sleep_duration(self, sleep_duration):
-        self.sleep_value.config(text=f"{sleep_duration:.1f} hours")  # 显示一位小数
-        self.sleep_progress["value"] = min(sleep_duration / 10 * 100, 100)  # 假设10小时为最大值
+        self.sleep_value.config(text=f"{sleep_duration:.1f} hours")  # preserve 1 decimal place
+        self.sleep_progress["value"] = min(sleep_duration / 10 * 100, 100)  #assume 10 hours as maximum
         self.show_encouragement()
 
     def update_blood_pressure(self, systolic, diastolic):
         self.bp_value.config(text=f"{systolic}/{diastolic}")
-        # 计算进度条，使用收缩压和舒张压的综合评估
-        sys_progress = min(systolic / 180 * 100, 100)  # 180为高血压上限
-        dia_progress = min(diastolic / 120 * 100, 100)  # 120为高血压上限
+        # calculate the progress based on the systolic and diastolic values
+        sys_progress = min(systolic / 180 * 100, 100)  # 180 is the systolic upper limit
+        dia_progress = min(diastolic / 120 * 100, 100)  # 120 is the diastolic upper limit
         self.bp_progress["value"] = (sys_progress + dia_progress) / 2
         self.show_encouragement()
 
     def update_blood_oxygen(self, oxygen):
         self.bo_value.config(text=f"{oxygen}%")
-        self.bo_progress["value"] = oxygen  # 血氧直接使用百分比
+        self.bo_progress["value"] = oxygen  # blood oxygen is usually between 0 and 100
         self.show_encouragement()
 
     def show_encouragement(self):
         current_time = time.time()
-        if current_time - self.last_api_call_time < 30:  # 30秒内不重复调用
+        if current_time - self.last_api_call_time < 30:  # it works every 30 seconds
+            print("Not calling API yet.")
             return
-        # 安全获取心率值
+        # get heart rate value
         heart_text = self.heart_value.cget("text").split()[0]
         try:
             heart_rate = int(float(heart_text))
@@ -290,7 +291,7 @@ class HealthDashboard:
             print(f"Invalid heart rate value: {heart_text}")
             heart_rate = 0
 
-        # 安全获取步数
+        # get step count value
         step_text = self.step_value.cget("text").split()[0]
         try:
             step_count = int(float(step_text))
@@ -298,7 +299,7 @@ class HealthDashboard:
             print(f"Invalid step count value: {step_text}")
             step_count = 0
 
-        # 安全获取卡路里
+        # get kalories values
         calories_text = self.calories_value.cget("text").split()[0]
         try:
             calories = int(float(calories_text))
@@ -306,7 +307,7 @@ class HealthDashboard:
             print(f"Invalid calories value: {calories_text}")
             calories = 0
 
-        # 安全获取睡眠时间
+        # get sleep duration values
         sleep_text = self.sleep_value.cget("text").split()[0]
         try:
             sleep_duration = float(sleep_text)
@@ -314,7 +315,7 @@ class HealthDashboard:
             print(f"Invalid sleep duration value: {sleep_text}")
             sleep_duration = 0
 
-        # 安全获取血压
+        # get systolic blood pressure and diastolic blood pressure values
         bp_text = self.bp_value.cget("text")
         try:
             systolic, diastolic = map(int, bp_text.split("/"))
@@ -322,7 +323,7 @@ class HealthDashboard:
             print(f"Invalid blood pressure value: {bp_text}")
             systolic, diastolic = 0, 0
 
-        # 安全获取血氧
+        # get the blood oxygen value
         oxygen_text = self.bo_value.cget("text").rstrip("%")
         try:
             oxygen = int(float(oxygen_text))
@@ -331,12 +332,14 @@ class HealthDashboard:
             oxygen = 0
 
         encouragement = get_encouragement(heart_rate, step_count, calories, systolic, diastolic, oxygen, sleep_duration)
-        # 打印鼓励信息，验证是否正确获取
+        # print out the encouragement message
         print("鼓励信息:", encouragement)
 
-        # 更新界面
+        # update the encouragement label
         self.encouragement_label.config(text=encouragement)
-        self.root.update_idletasks()  # 强制刷新界面
+        self.root.update_idletasks()  # force refresh the interface
+        # update the last API call time
+        self.last_api_call_time = current_time
 
 
 if __name__ == "__main__":
