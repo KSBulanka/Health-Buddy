@@ -1,53 +1,28 @@
-import tkinter as tk
-from tkinter import ttk
 import paho.mqtt.client as mqtt
 import json
-from openai import OpenAI
-import os
 import time
+from flask import Flask, render_template
+from openai import OpenAI
+import threading
 
-def get_encouragement(heart_rate, step_count, calories, systolic, diastolic, oxygen, sleep_duration):
-    try:
-        client = OpenAI(
-            api_key="sk-SrN9QwmpjDIsP0JFI350jO2sApVUitBQB4kdIoRrExEjwGUw",
-            base_url="https://api.moonshot.cn/v1",
-        )
+app = Flask(__name__)
 
-        # construct user message
-        user_message = f"Heart rate {heart_rate}, steps {step_count}, calories {calories}, BP {systolic}/{diastolic}, SpO2 {oxygen}, sleep {sleep_duration}."
-
-        # construct API request
-        completion = client.chat.completions.create(
-            model="moonshot-v1-8k",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You're Nyota, my caring friend. You're gentle and encouraging. Use my health data (heart rate, steps, calories, BP, SpO2, sleep) to give brief, warm feedback. Max 30 characters."
-                },
-                {
-                    "role": "user",
-                    "content": user_message
-                }
-            ],
-            temperature=0.3,
-        )
-
-        # print API response for debug
-        print("API 返回内容:", completion)
-
-        return completion.choices[0].message.content
-
-    except Exception as e:
-        print(f"发生错误: {e}")
-        return ""
+dashboard_instance = None  # Global variable to hold the HealthDashboard instance
 
 class HealthDashboard:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Health Dashboard")
-        self.root.geometry("800x600")
-        self.root.configure(bg="#f0f0f0")
+    def __init__(self):
+        self.heart_rate = 0
+        self.step_count = 0
+        self.calories = 0
+        self.sleep_duration = 0
+        self.systolic = 0
+        self.diastolic = 0
+        self.oxygen = 0
+        self.heart_progress = 0
+        self.step_progress = 0
         self.last_api_call_time = 0
+        self.encouragement = "thinking..."
+        self.lock = threading.Lock()  # Create a lock object
 
         # MQTT settings
         self.broker_address = "broker.hivemq.com"
@@ -70,128 +45,6 @@ class HealthDashboard:
         self.client.connect(self.broker_address, self.port)
         self.client.loop_start()
 
-        # Create interface components
-        self.create_widgets()
-
-    def create_widgets(self):
-        # Create a frame for health data sections
-        health_frame = tk.Frame(self.root, bg="#f0f0f0")
-        health_frame.pack(pady=10, fill="x", padx=20)
-
-        self.create_heart_rate_section(health_frame)
-        self.create_step_count_section(health_frame)
-        self.create_calories_section(health_frame)
-        self.create_sleep_duration_section(health_frame)
-        self.create_blood_pressure_section(health_frame)
-        self.create_blood_oxygen_section(health_frame)
-
-        self.create_encouragement_section()
-        self.create_animation_section()
-
-    def create_heart_rate_section(self, parent):
-        heart_frame = tk.Frame(parent, bg="#f0f0f0")
-        heart_frame.pack(pady=10, fill="x", padx=20)
-
-        heart_label = tk.Label(heart_frame, text="Heart Rate:", font=("Arial", 12), bg="#f0f0f0")
-        heart_label.pack(side="left")
-
-        self.heart_value = tk.Label(heart_frame, text="0", font=("Arial", 12, "bold"), bg="#f0f0f0", fg="#2c3e50")
-        self.heart_value.pack(side="left", padx=10)
-
-        self.heart_progress = ttk.Progressbar(heart_frame, orient="horizontal", length=200, mode="determinate")
-        self.heart_progress.pack(side="right", padx=20)
-
-    def create_step_count_section(self, parent):
-        step_frame = tk.Frame(parent, bg="#f0f0f0")
-        step_frame.pack(pady=10, fill="x", padx=20)
-
-        step_label = tk.Label(step_frame, text="Step Count:", font=("Arial", 12), bg="#f0f0f0")
-        step_label.pack(side="left")
-
-        self.step_value = tk.Label(step_frame, text="0", font=("Arial", 12, "bold"), bg="#f0f0f0", fg="#2c3e50")
-        self.step_value.pack(side="left", padx=10)
-
-        self.step_progress = ttk.Progressbar(step_frame, orient="horizontal", length=200, mode="determinate")
-        self.step_progress.pack(side="right", padx=20)
-
-    def create_calories_section(self, parent):
-        calories_frame = tk.Frame(parent, bg="#f0f0f0")
-        calories_frame.pack(pady=10, fill="x", padx=20)
-
-        calories_label = tk.Label(calories_frame, text="Calories:", font=("Arial", 12), bg="#f0f0f0")
-        calories_label.pack(side="left")
-
-        self.calories_value = tk.Label(calories_frame, text="0", font=("Arial", 12, "bold"), bg="#f0f0f0", fg="#2c3e50")
-        self.calories_value.pack(side="left", padx=10)
-
-        self.calories_progress = ttk.Progressbar(calories_frame, orient="horizontal", length=200, mode="determinate")
-        self.calories_progress.pack(side="right", padx=20)
-
-    def create_sleep_duration_section(self, parent):
-        sleep_frame = tk.Frame(parent, bg="#f0f0f0")
-        sleep_frame.pack(pady=10, fill="x", padx=20)
-
-        sleep_label = tk.Label(sleep_frame, text="Sleep Duration:", font=("Arial", 12), bg="#f0f0f0")
-        sleep_label.pack(side="left")
-
-        self.sleep_value = tk.Label(sleep_frame, text="0", font=("Arial", 12, "bold"), bg="#f0f0f0", fg="#2c3e50")
-        self.sleep_value.pack(side="left", padx=10)
-
-        self.sleep_progress = ttk.Progressbar(sleep_frame, orient="horizontal", length=200, mode="determinate")
-        self.sleep_progress.pack(side="right", padx=20)
-
-    def create_blood_pressure_section(self, parent):
-        bp_frame = tk.Frame(parent, bg="#f0f0f0")
-        bp_frame.pack(pady=10, fill="x", padx=20)
-
-        bp_label = tk.Label(bp_frame, text="Blood Pressure:", font=("Arial", 12), bg="#f0f0f0")
-        bp_label.pack(side="left")
-
-        self.bp_value = tk.Label(bp_frame, text="0/0", font=("Arial", 12, "bold"), bg="#f0f0f0", fg="#2c3e50")
-        self.bp_value.pack(side="left", padx=10)
-
-        self.bp_progress = ttk.Progressbar(bp_frame, orient="horizontal", length=200, mode="determinate")
-        self.bp_progress.pack(side="right", padx=20)
-
-    def create_blood_oxygen_section(self, parent):
-        bo_frame = tk.Frame(parent, bg="#f0f0f0")
-        bo_frame.pack(pady=10, fill="x", padx=20)
-
-        bo_label = tk.Label(bo_frame, text="Blood Oxygen:", font=("Arial", 12), bg="#f0f0f0")
-        bo_label.pack(side="left")
-
-        self.bo_value = tk.Label(bo_frame, text="0%", font=("Arial", 12, "bold"), bg="#f0f0f0", fg="#2c3e50")
-        self.bo_value.pack(side="left", padx=10)
-
-        self.bo_progress = ttk.Progressbar(bo_frame, orient="horizontal", length=200, mode="determinate")
-        self.bo_progress.pack(side="right", padx=20)
-
-    def create_encouragement_section(self):
-        # scale the font size to fit the window width
-        self.encouragement_label = tk.Label(self.root, text="", font=("Arial", 10, "bold"), bg="#f0f0f0", fg="#27ae60", wraplength=760)
-        self.encouragement_label.pack(pady=10)
-
-    def create_animation_section(self):
-        try:
-            self.gif = tk.PhotoImage(file="靓仔雪鸮🕶.gif", format="gif -index 0")
-            self.image_label = tk.Label(self.root, image=self.gif, bg="#f0f0f0")
-            self.image_label.pack(pady=20)
-
-            self.frame_index = 0
-            self.update_animation()
-        except tk.TclError:
-            print("GIF file not found or cannot be loaded. Please check the file path and name.")
-
-    def update_animation(self):
-        try:
-            self.frame_index += 1
-            self.gif = tk.PhotoImage(file="靓仔雪鸮🕶.gif", format=f"gif -index {self.frame_index}")
-            self.image_label.config(image=self.gif)
-            self.root.after(100, self.update_animation)
-        except tk.TclError:
-            self.frame_index = 0
-            self.root.after(100, self.update_animation)
-
     def on_connect(self, client, userdata, flags, rc):
         if rc == 0:
             print("Connected to MQTT Broker!")
@@ -204,145 +57,136 @@ class HealthDashboard:
         topic = msg.topic
         payload = msg.payload.decode()
 
-        if topic == self.topics["heart_rate"]:
-            try:
-                # transform the payload to float and then to int
-                heart_rate = int(float(payload))
-                self.update_heart_rate(heart_rate)
-            except ValueError:
-                print(f"Invalid heart rate payload: {payload}")
-        elif topic == self.topics["step_count"]:
-            try:
-                step_count = int(float(payload))
-                self.update_step_count(step_count)
-            except ValueError:
-                print(f"Invalid step count payload: {payload}")
-        elif topic == self.topics["calories"]:
-            try:
-                calories = int(float(json.loads(payload)["calories"]))
-                self.update_calories(calories)
-            except (ValueError, KeyError, json.JSONDecodeError) as e:
-                print(f"Error processing calories payload: {e}")
-        elif topic == self.topics["sleep_duration"]:
-            try:
-                sleep_duration = float(json.loads(payload)["sleep_duration"])
-                self.update_sleep_duration(sleep_duration)
-            except (ValueError, KeyError, json.JSONDecodeError) as e:
-                print(f"Error processing sleep duration payload: {e}")
-        elif topic == self.topics["blood_pressure"]:
-            try:
-                data = json.loads(payload)
-                systolic = int(float(data["systolic"]))
-                diastolic = int(float(data["diastolic"]))
-                self.update_blood_pressure(systolic, diastolic)
-            except (ValueError, KeyError, json.JSONDecodeError) as e:
-                print(f"Error processing blood pressure payload: {e}")
-        elif topic == self.topics["blood_oxygen"]:
-            try:
-                data = json.loads(payload)
-                oxygen = int(float(data["oxygen"]))
-                self.update_blood_oxygen(oxygen)
-            except (ValueError, KeyError, json.JSONDecodeError) as e:
-                print(f"Error processing blood oxygen payload: {e}")
+        with self.lock:  # use the lock to protect data access
+            if topic == self.topics["heart_rate"]:
+                try:
+                    self.heart_rate = int(float(payload))
+                    self.heart_progress = min(self.heart_rate / 100 * 100, 100)
+                except ValueError:
+                    print(f"Invalid heart rate payload: {payload}")
+            elif topic == self.topics["step_count"]:
+                try:
+                    self.step_count = int(float(payload))
+                    self.step_progress = min(self.step_count / 10000 * 100, 100)
+                except ValueError:
+                    print(f"Invalid step count payload: {payload}")
+            elif topic == self.topics["calories"]:
+                try:
+                    self.calories = int(float(json.loads(payload)["calories"]))
+                    self.calories_progress = min(self.calories / 3000 * 100, 100)
+                except (ValueError, KeyError, json.JSONDecodeError) as e:
+                    print(f"Error processing calories payload: {e}")
+            elif topic == self.topics["sleep_duration"]:
+                try:
+                    self.sleep_duration = float(json.loads(payload)["sleep_duration"])
+                    self.sleep_progress = min(self.sleep_duration / 10 * 100, 100)
+                except (ValueError, KeyError, json.JSONDecodeError) as e:
+                    print(f"Error processing sleep duration payload: {e}")
+                    # 在 on_message 方法中
+            elif topic == self.topics["blood_pressure"]:
+                try:
+                    data = json.loads(payload)
+                    self.systolic = int(float(data["systolic"]))
+                    self.diastolic = int(float(data["diastolic"]))
+                    bp_progress = (self.systolic / 180 + self.diastolic / 120) / 2 * 100
+                    self.bp_progress = min(bp_progress, 100)
+                except (ValueError, KeyError, json.JSONDecodeError) as e:
+                    print(f"Error processing blood pressure payload: {e}")
+            elif topic == self.topics["blood_oxygen"]:
+                try:
+                    data = json.loads(payload)
+                    self.oxygen = int(float(data["oxygen"]))
+                except (ValueError, KeyError, json.JSONDecodeError) as e:
+                    print(f"Error processing blood oxygen payload: {e}")
 
-    def update_heart_rate(self, heart_rate):
-        self.heart_value.config(text=f"{heart_rate} bpm")
-        self.heart_progress["value"] = min(heart_rate / 100 * 100, 100)
-        self.show_encouragement()
-
-    def update_step_count(self, step_count):
-        self.step_value.config(text=f"{step_count} steps")
-        self.step_progress["value"] = min(step_count / 10000 * 100, 100)  # assume 10000 steps as maximum
-        self.show_encouragement()
-
-    def update_calories(self, calories):
-        self.calories_value.config(text=f"{calories} kcal")
-        self.calories_progress["value"] = min(calories / 3000 * 100, 100)  # assume 3000 calories as maximum
-        self.show_encouragement()
-
-    def update_sleep_duration(self, sleep_duration):
-        self.sleep_value.config(text=f"{sleep_duration:.1f} hours")  # preserve 1 decimal place
-        self.sleep_progress["value"] = min(sleep_duration / 10 * 100, 100)  #assume 10 hours as maximum
-        self.show_encouragement()
-
-    def update_blood_pressure(self, systolic, diastolic):
-        self.bp_value.config(text=f"{systolic}/{diastolic}")
-        # calculate the progress based on the systolic and diastolic values
-        sys_progress = min(systolic / 180 * 100, 100)  # 180 is the systolic upper limit
-        dia_progress = min(diastolic / 120 * 100, 100)  # 120 is the diastolic upper limit
-        self.bp_progress["value"] = (sys_progress + dia_progress) / 2
-        self.show_encouragement()
-
-    def update_blood_oxygen(self, oxygen):
-        self.bo_value.config(text=f"{oxygen}%")
-        self.bo_progress["value"] = oxygen  # blood oxygen is usually between 0 and 100
+        # call API outside the lock to avoid blocking the MQTT loop
         self.show_encouragement()
 
     def show_encouragement(self):
         current_time = time.time()
-        if current_time - self.last_api_call_time < 30:  # it works every 30 seconds
-            print("Not calling API yet.")
+        if current_time - self.last_api_call_time < 30:
             return
-        # get heart rate value
-        heart_text = self.heart_value.cget("text").split()[0]
+
         try:
-            heart_rate = int(float(heart_text))
-        except ValueError:
-            print(f"Invalid heart rate value: {heart_text}")
-            heart_rate = 0
+            with self.lock:  # protect data access
+                heart_rate = self.heart_rate
+                step_count = self.step_count
+                calories = self.calories
+                sleep_duration = self.sleep_duration
+                systolic = self.systolic
+                diastolic = self.diastolic
+                oxygen = self.oxygen
 
-        # get step count value
-        step_text = self.step_value.cget("text").split()[0]
+            # call API to get encouragement
+            encouragement = self.get_encouragement(
+                heart_rate, step_count, calories,
+                systolic, diastolic, oxygen, sleep_duration
+            )
+
+            with self.lock:
+                self.encouragement = encouragement
+                self.last_api_call_time = current_time
+        except Exception as e:
+            print(f"Error in show_encouragement: {e}")
+
+
+    def get_encouragement(self, heart_rate, step_count, calories, systolic, diastolic, oxygen, sleep_duration):
         try:
-            step_count = int(float(step_text))
-        except ValueError:
-            print(f"Invalid step count value: {step_text}")
-            step_count = 0
+            client = OpenAI(
+            api_key="sk-SrN9QwmpjDIsP0JFI350jO2sApVUitBQB4kdIoRrExEjwGUw",
+            base_url="https://api.moonshot.cn/v1",
+            )
 
-        # get kalories values
-        calories_text = self.calories_value.cget("text").split()[0]
-        try:
-            calories = int(float(calories_text))
-        except ValueError:
-            print(f"Invalid calories value: {calories_text}")
-            calories = 0
+            user_message = (
+                f"heartrate: {heart_rate}, step_count: {step_count}, calories: {calories}, "
+                f"blood pressure: {systolic}/{diastolic}, blood oxygen: {oxygen}%, sleep duration: {sleep_duration}h。"
+            )
 
-        # get sleep duration values
-        sleep_text = self.sleep_value.cget("text").split()[0]
-        try:
-            sleep_duration = float(sleep_text)
-        except ValueError:
-            print(f"Invalid sleep duration value: {sleep_text}")
-            sleep_duration = 0
+            # construct API request
+            completion = client.chat.completions.create(
+                model="moonshot-v1-8k",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You're Nyota, my caring friend. You're gentle and encouraging. Use my health data (heart rate, steps, calories, BP, SpO2, sleep) to give brief, warm feedback in English. Max 50 characters."
+                    },
+                    {
+                        "role": "user",
+                        "content": user_message
+                    }
+                ],
+                temperature=0.3,
+            )
 
-        # get systolic blood pressure and diastolic blood pressure values
-        bp_text = self.bp_value.cget("text")
-        try:
-            systolic, diastolic = map(int, bp_text.split("/"))
-        except (ValueError, IndexError):
-            print(f"Invalid blood pressure value: {bp_text}")
-            systolic, diastolic = 0, 0
+            return completion.choices[0].message.content.strip()
 
-        # get the blood oxygen value
-        oxygen_text = self.bo_value.cget("text").rstrip("%")
-        try:
-            oxygen = int(float(oxygen_text))
-        except ValueError:
-            print(f"Invalid oxygen value: {oxygen_text}")
-            oxygen = 0
+        except Exception as e:
+            print(f"API calling is wrong: {e}")
+            return "Keep living！You're always worth it."
 
-        encouragement = get_encouragement(heart_rate, step_count, calories, systolic, diastolic, oxygen, sleep_duration)
-        # print out the encouragement message
-        print("鼓励信息:", encouragement)
+# initialize the dashboard
+def create_dashboard():
+    global dashboard_instance
+    if dashboard_instance is None:
+        dashboard_instance = HealthDashboard()
+    return dashboard_instance
 
-        # update the encouragement label
-        self.encouragement_label.config(text=encouragement)
-        self.root.update_idletasks()  # force refresh the interface
-        # update the last API call time
-        self.last_api_call_time = current_time
+@app.route('/')
+def index():
+    dashboard = create_dashboard()
+    return render_template('dashboard.html', dashboard=dashboard)
 
+# add a filter to convert timestamp to local time
+@app.template_filter('timestamp')
+def timestamp_filter(value):
+    if value == 0:
+        return "NOT YET UPDATED"
+    try:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(value))
+    except:
+        return "TIME FORMAT INCORRECT"
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = HealthDashboard(root)
-    root.mainloop()
+if __name__ == '__main__':
+    create_dashboard()  # initialize the mqtt client
+
+    app.run(debug=True, host='0.0.0.0', port=5000)
